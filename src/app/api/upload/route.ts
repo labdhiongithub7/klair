@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pdf from "pdf-parse";
+import { indexDocument } from "@/lib/rag";
 
 export const runtime = "nodejs";
 
@@ -36,21 +37,26 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
 
     const data = await pdf(buffer, {
-      pagerender: (pageData) => pageData.getTextContent(),
-    } as any);
+      pagerender: (pageData: { getTextContent: () => unknown }) =>
+        pageData.getTextContent(),
+    } as unknown);
 
-    // `text` is a single string; split into rough per-page chunks by '\f'
     const rawPages = typeof data.text === "string" ? data.text.split("\f") : [];
 
     const pages: ParsedPage[] = rawPages
-      .map((t, index) => ({
+      .map((t: string, index: number) => ({
         pageNumber: index + 1,
         text: t.trim(),
       }))
-      .filter((p) => p.text.length > 0);
+      .filter((p: ParsedPage) => p.text.length > 0);
+
+    const documentId = crypto.randomUUID();
+
+    // Index into Pinecone so questions can be answered later.
+    await indexDocument(documentId, pages);
 
     const responseBody: ParsedDocumentResponse = {
-      documentId: crypto.randomUUID(),
+      documentId,
       pages,
     };
 

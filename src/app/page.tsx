@@ -87,26 +87,68 @@ export default function Home() {
       text: question,
     };
     setChat((prev) => [...prev, userTurn]);
-    setIsThinking(true);
 
-    // Placeholder until API is wired
-    setTimeout(() => {
+    if (!activeDocumentId) {
+      const assistantTurn: ChatTurn = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: "Upload a PDF first so I have something gentle to read from.",
+      };
+      setChat((prev) => [...prev, assistantTurn]);
+      return;
+    }
+
+    setIsThinking(true);
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question,
+          documentId: activeDocumentId,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const message = (data as { error?: string }).error;
+        const assistantTurn: ChatTurn = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text:
+            message ??
+            "I couldn't reach the answering service right now. Please check your API keys and try again.",
+        };
+        setChat((prev) => [...prev, assistantTurn]);
+        return;
+      }
+
+      const data = (await res.json()) as {
+        answer: string;
+        citations: Citation[];
+      };
+
+      const assistantTurn: ChatTurn = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: data.answer,
+        citations: data.citations,
+      };
+      setChat((prev) => [...prev, assistantTurn]);
+    } catch (err) {
+      console.error(err);
       const assistantTurn: ChatTurn = {
         id: crypto.randomUUID(),
         role: "assistant",
         text:
-          "This is a preview of how Klair will answer from your document. Once the backend is connected, answers here will be grounded in the PDF with page-level citations.",
-        citations: [
-          {
-            page: 3,
-            paragraphIndex: 2,
-            snippet: "Example paragraph snippet from page 3…",
-          },
-        ],
+          "Something went wrong while answering. Once the backend keys are set, I’ll be able to reply from your PDF.",
       };
       setChat((prev) => [...prev, assistantTurn]);
+    } finally {
       setIsThinking(false);
-    }, 900);
+    }
   };
 
   const handleJumpToSource = (citation: Citation) => {
