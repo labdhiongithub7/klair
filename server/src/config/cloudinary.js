@@ -1,5 +1,4 @@
 import { v2 as cloudinary } from 'cloudinary';
-import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import multer from 'multer';
 
 // Configure Cloudinary
@@ -9,20 +8,11 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Configure storage
-const storage = new CloudinaryStorage({
-    cloudinary: cloudinary,
-    params: {
-        folder: 'pdfs',
-        resource_type: 'raw',
-        allowed_formats: ['pdf'],
-        access_mode: 'public',
-        public_id: (req, file) => `pdf-${Date.now()}-${file.originalname}`
-    }
-});
+// Use memory storage so we can parse the PDF buffer before uploading to Cloudinary
+const storage = multer.memoryStorage();
 
-// Create multer upload middleware with improved error handling
-const uploadPDF = multer({
+// Create multer upload middleware
+const uploadPDFMulter = multer({
     storage: storage,
     limits: {
         fileSize: 10 * 1024 * 1024 // Limit file size to 10MB
@@ -38,16 +28,15 @@ const uploadPDF = multer({
 }).single('pdf');
 
 // Enhanced wrapper for multer middleware to provide better error handling
-const uploadPDFWithErrorHandling = (req, res, next) => {
-    uploadPDF(req, res, (err) => {
+const uploadPDF = (req, res, next) => {
+    uploadPDFMulter(req, res, (err) => {
         if (err) {
             if (err instanceof multer.MulterError) {
-                // A Multer error occurred during upload
                 console.error(`Multer upload error: ${err.code}`, err);
                 if (err.code === 'LIMIT_FILE_SIZE') {
                     return res.status(413).json({
                         success: false,
-                        error: `File is too large. Maximum size allowed is 10MB. Your file is ${(req.file?.size / 1024 / 1024).toFixed(2)}MB.`
+                        error: 'File is too large. Maximum size allowed is 10MB.'
                     });
                 }
                 if (err.code === 'LIMIT_UNEXPECTED_FILE') {
@@ -64,32 +53,12 @@ const uploadPDFWithErrorHandling = (req, res, next) => {
     });
 };
 
-// Function to upload PDF with enhanced error handling
+// Upload PDF buffer to Cloudinary using upload_stream
 const uploadPDFToCloudinary = async (file) => {
     try {
-        // Input validation
-        if (!file) {
+        if (!file || !file.buffer) {
             console.error('Invalid file object provided to uploadPDFToCloudinary');
-            throw new Error('Invalid file: file object is missing');
-        }
-
-        // When using CloudinaryStorage with multer, the file is already uploaded
-        // and we just need to return the result instead of uploading again
-        if (file.path && file.path.includes('cloudinary')) {
-            console.log(`File already uploaded to Cloudinary: ${file.path}`);
-            return {
-                success: true,
-                url: file.path,
-                public_id: file.filename || `pdf-${Date.now()}-${file.originalname}`,
-                format: 'pdf',
-                created_at: new Date().toISOString()
-            };
-        }
-
-        // If we have a local file path (not a Cloudinary URL), continue with upload
-        if (!file.path) {
-            console.error('Invalid file object provided to uploadPDFToCloudinary');
-            throw new Error('Invalid file: file path is missing');
+            throw new Error('Invalid file: file buffer is missing');
         }
 
         // Verify credentials are set
@@ -98,16 +67,28 @@ const uploadPDFToCloudinary = async (file) => {
             throw new Error('Cloudinary credentials are not properly configured');
         }
 
-        console.log(`Attempting to upload file from path: ${file.path}`);
+        const publicId = `pdf-${Date.now()}-${file.originalname}`;
+        console.log(`Uploading file to Cloudinary: ${publicId}`);
 
-        // Upload with detailed options
-        const result = await cloudinary.uploader.upload(file.path, {
-            resource_type: "raw",
-            folder: "pdfs",
-            use_filename: true,
-            unique_filename: false,
-            access_mode: "public",
-            type: "upload"
+        // Use upload_stream to upload from buffer
+        const result = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+                {
+                    resource_type: 'raw',
+                    folder: 'pdfs',
+                    public_id: publicId,
+                    access_mode: 'public',
+                    type: 'upload'
+                },
+                (error, result) => {
+                    if (error) {
+                        reject(error);
+                    } else {
+                        resolve(result);
+                    }
+                }
+            );
+            uploadStream.end(file.buffer);
         });
 
         // Verify upload result
@@ -127,7 +108,6 @@ const uploadPDFToCloudinary = async (file) => {
         };
     } catch (error) {
         console.error('Cloudinary upload error:', error);
-        // Add stack trace for better debugging
         console.error('Error stack:', error.stack);
         return {
             success: false,
@@ -150,7 +130,7 @@ const deleteFromCloudinary = async (publicId) => {
 
         // Delete the resource
         const result = await cloudinary.uploader.destroy(publicId, {
-            resource_type: "raw",
+            resource_type: 'raw',
         });
 
         console.log(`[deleteFromCloudinary] Delete result:`, result);
@@ -183,7 +163,6 @@ const deleteFromCloudinary = async (publicId) => {
 
 export {
     uploadPDF,
-    uploadPDFWithErrorHandling,
     uploadPDFToCloudinary,
     deleteFromCloudinary
 };

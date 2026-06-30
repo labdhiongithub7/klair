@@ -24,6 +24,18 @@ export const uploadPDF = async (req, res) => {
             });
         }
 
+        // Parse PDF content from the file buffer directly (before uploading to Cloudinary)
+        console.log("[uploadPDF] Parsing PDF content from buffer");
+        let pdfContent = '';
+        try {
+            const pdfData = await pdfParse(req.file.buffer);
+            pdfContent = pdfData.text;
+            console.log("[uploadPDF] PDF parsed successfully, extracted", pdfContent.length, "characters");
+        } catch (parseError) {
+            console.error("[uploadPDF] Error parsing PDF:", parseError);
+            pdfContent = "Failed to extract text from PDF.";
+        }
+
         // Upload to Cloudinary
         console.log("[uploadPDF] Uploading file to Cloudinary:", req.file.originalname);
         const result = await uploadPDFToCloudinary(req.file);
@@ -35,34 +47,6 @@ export const uploadPDF = async (req, res) => {
                 success: false,
                 message: result.error
             });
-        }
-        console.log("[uploadPDF] Parsing PDF content");
-        let pdfContent = '';
-        try {
-            // Download the PDF from Cloudinary since we have the URL
-            console.log("[uploadPDF] Downloading PDF from Cloudinary");
-
-            // Use secure_url if available, otherwise use the regular URL
-            const downloadUrl = result.secure_url || result.url;
-            console.log("[uploadPDF] Download URL:", downloadUrl);
-
-            // Remove authentication headers - public resources don't need them
-            const response = await fetch(downloadUrl);
-
-            if (!response.ok) {
-                throw new Error(`Failed to download PDF: ${response.status} ${response.statusText}`);
-            }
-
-            const arrayBuffer = await response.arrayBuffer();
-            const pdfBuffer = Buffer.from(arrayBuffer);
-            console.log("[uploadPDF] PDF downloaded successfully, parsing content");
-
-            const pdfData = await pdfParse(pdfBuffer);
-            pdfContent = pdfData.text;
-            console.log("[uploadPDF] PDF parsed successfully, extracted", pdfContent.length, "characters");
-        } catch (parseError) {
-            console.error("[uploadPDF] Error parsing PDF:", parseError);
-            pdfContent = "Failed to extract text from PDF.";
         }
         // Create PDF document
         console.log("[uploadPDF] Creating PDF document in database");

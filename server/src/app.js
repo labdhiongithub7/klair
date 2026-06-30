@@ -6,8 +6,6 @@ import { generalLimiter } from './middleware/rateLimiting.js';
 
 const app = express();
 
-// Trust proxy - required for Render/Vercel reverse proxy
-// Fixes express-rate-limit X-Forwarded-For error
 app.set('trust proxy', 1);
 
 // Security headers
