@@ -67,16 +67,18 @@ const uploadPDFToCloudinary = async (file) => {
             throw new Error('Cloudinary credentials are not properly configured');
         }
 
-        const publicId = `pdf-${Date.now()}-${file.originalname}`;
+        // Strip .pdf extension from originalname to avoid double extension (.pdf.pdf)
+        const baseName = file.originalname.replace(/\.pdf$/i, '');
+        const publicId = `pdf-${Date.now()}-${baseName}`;
         console.log(`Uploading file to Cloudinary: ${publicId}`);
 
         // Use upload_stream to upload from buffer
         const result = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
                 {
-                    resource_type: 'image',
+                    resource_type: 'raw',
                     folder: 'pdfs',
-                    public_id: publicId,
+                    public_id: publicId + '.pdf',
                     access_mode: 'public',
                     type: 'upload'
                 },
@@ -130,7 +132,7 @@ const deleteFromCloudinary = async (publicId) => {
 
         // Delete the resource
         const result = await cloudinary.uploader.destroy(publicId, {
-            resource_type: 'image',
+            resource_type: 'raw',
         });
 
         console.log(`[deleteFromCloudinary] Delete result:`, result);

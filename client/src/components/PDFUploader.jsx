@@ -99,11 +99,12 @@ const PDFUploader = () => {
       ) : (
         <div className=" w-[100%]">
           <div className="mb-4">
-            <embed
-              src={currentPdf.url}
-              type="application/pdf"
+            <iframe
+              src={`https://docs.google.com/gview?url=${encodeURIComponent(currentPdf.url)}&embedded=true`}
               width="100%"
               height="400"
+              style={{ border: 'none' }}
+              title={currentPdf.title || 'PDF Viewer'}
             />
           </div>
           <div className="flex items-center justify-between">

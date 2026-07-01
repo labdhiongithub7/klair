@@ -103,22 +103,18 @@ export const findRelevantChunks = async (query, chunks, topK = 3) => {
     }
 
     try {
-        // For better performance with large documents, use a two-stage approach:
-        // 1. First, filter using simple keyword matching
-        // 2. Then, use AI to rank the filtered chunks
-        
-        // Stage 1: Simple keyword filtering
-        const keywordFiltered = chunks.map(chunk => ({
+        // Use keyword matching to rank chunks (no AI calls to save API quota)
+        const scoredChunks = chunks.map(chunk => ({
             ...chunk,
-            keywordScore: calculateTextSimilarity(query, chunk.text)
+            relevanceScore: calculateTextSimilarity(query, chunk.text),
+            reason: 'keyword matching'
         }))
-        .filter(chunk => chunk.keywordScore > 0.1) // Filter out chunks with very low keyword match
-        .sort((a, b) => b.keywordScore - a.keywordScore)
-        .slice(0, Math.min(10, chunks.length)); // Take top 10 for AI ranking
+        .filter(chunk => chunk.relevanceScore > 0.05)
+        .sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-        console.log(`[findRelevantChunks] Filtered to ${keywordFiltered.length} chunks using keyword matching`);
+        console.log(`[findRelevantChunks] Scored ${scoredChunks.length} chunks with keyword matching`);
 
-        if (keywordFiltered.length === 0) {
+        if (scoredChunks.length === 0) {
             // If no keyword matches, fall back to first few chunks
             console.log(`[findRelevantChunks] No keyword matches found, returning first ${Math.min(topK, chunks.length)} chunks`);
             return chunks.slice(0, Math.min(topK, chunks.length)).map(chunk => ({
@@ -128,58 +124,7 @@ export const findRelevantChunks = async (query, chunks, topK = 3) => {
             }));
         }
 
-        // Stage 2: AI-powered ranking for the filtered chunks
-        const rankedChunks = [];
-        
-        for (const chunk of keywordFiltered.slice(0, 6)) { // Limit to 6 for AI processing
-            try {
-                const prompt = `Rate the relevance of the following text chunk to this question: "${query}"
-                
-Text chunk: "${chunk.text.substring(0, 800)}..."
-
-Rate from 0-10 where:
-- 10: Directly answers the question or contains key information
-- 7-9: Highly relevant, contains related information
-- 4-6: Somewhat relevant, contains background information
-- 1-3: Minimally relevant
-- 0: Not relevant
-
-Respond with only a number (0-10) and a brief reason in this format: "Score: X, Reason: brief explanation"`;
-
-                const result = await model.generateContent(prompt);
-                const response = result.response.text().trim();
-                
-                // Parse the AI response
-                const scoreMatch = response.match(/Score:\s*(\d+)/i);
-                const reasonMatch = response.match(/Reason:\s*(.+)/i);
-                
-                const aiScore = scoreMatch ? parseInt(scoreMatch[1]) / 10 : chunk.keywordScore;
-                const reason = reasonMatch ? reasonMatch[1].trim() : 'AI analysis';
-                
-                rankedChunks.push({
-                    ...chunk,
-                    relevanceScore: Math.max(aiScore, chunk.keywordScore), // Use the higher of AI or keyword score
-                    reason: reason,
-                    aiScore: aiScore,
-                    keywordScore: chunk.keywordScore
-                });
-                
-            } catch (aiError) {
-                console.warn(`[findRelevantChunks] AI ranking failed for chunk, using keyword score:`, aiError.message);
-                rankedChunks.push({
-                    ...chunk,
-                    relevanceScore: chunk.keywordScore,
-                    reason: 'keyword matching (AI unavailable)',
-                    aiScore: null,
-                    keywordScore: chunk.keywordScore
-                });
-            }
-        }
-        
-        // Sort by relevance score and return top K
-        const topChunks = rankedChunks
-            .sort((a, b) => b.relevanceScore - a.relevanceScore)
-            .slice(0, topK);
+        const topChunks = scoredChunks.slice(0, topK);
 
         console.log(`[findRelevantChunks] Returning ${topChunks.length} most relevant chunks`);
         console.log(`[findRelevantChunks] Top chunk scores:`, topChunks.map(c => ({ 
@@ -192,7 +137,6 @@ Respond with only a number (0-10) and a brief reason in this format: "Score: X, 
 
     } catch (error) {
         console.error('[findRelevantChunks] Error in relevance ranking:', error);
-        // Fallback to simple keyword matching
         const fallbackChunks = chunks
             .map(chunk => ({
                 ...chunk,
