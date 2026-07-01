@@ -74,7 +74,7 @@ const uploadPDFToCloudinary = async (file) => {
         const result = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
                 {
-                    resource_type: 'raw',
+                    resource_type: 'image',
                     folder: 'pdfs',
                     public_id: publicId,
                     access_mode: 'public',
@@ -130,7 +130,7 @@ const deleteFromCloudinary = async (publicId) => {
 
         // Delete the resource
         const result = await cloudinary.uploader.destroy(publicId, {
-            resource_type: 'raw',
+            resource_type: 'image',
         });
 
         console.log(`[deleteFromCloudinary] Delete result:`, result);
